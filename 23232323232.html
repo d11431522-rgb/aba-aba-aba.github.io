@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Square Flood - 極致煙火版</title>
+    <style>
+        :root {
+            --bg-color: #050a14;
+            --card-bg: #ffffff;
+            --primary-orange: #ff7a45;
+            --text-color: #002766;
+            --accent-blue: #91d5ff;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: var(--bg-color);
+            font-family: 'Segoe UI', "Microsoft JhengHei", sans-serif;
+            color: var(--text-color);
+            overflow: hidden;
+        }
+
+        .game-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 2rem;
+            border-radius: 24px;
+            box-shadow: 0 0 50px rgba(0, 162, 255, 0.3);
+            text-align: center;
+            max-width: 95vw;
+            position: relative;
+            z-index: 10;
+        }
+
+        h1 {
+            margin-top: 0;
+            color: #d46b08;
+            font-size: 1.8rem;
+            letter-spacing: 2px;
+        }
+
+        .stats {
+            margin-bottom: 0.5rem;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        #moves-count {
+            color: #cf1322;
+            font-size: 2rem;
+        }
+
+        .timer-container {
+            width: 100%;
+            height: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+
+        #timer-bar {
+            width: 0%;
+            height: 100%;
+            background: #ff7a45;
+            transition: width 0.05s linear;
+        }
+
+        canvas#gameCanvas {
+            border-radius: 8px;
+            cursor: pointer;
+            max-width: 100%;
+            height: auto;
+            background: #000;
+            border: 2px solid #333;
+        }
+
+        /* 煙火 Canvas：最高層級，背景全透明 */
+        #fireworkCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999; 
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .color-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            border: 3px solid #fff;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.2s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .color-btn:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+        }
+
+        .action-buttons {
+            margin-top: 1.5rem;
+        }
+
+        button.reset-btn {
+            border: none;
+            padding: 12px 35px;
+            border-radius: 30px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            background: linear-gradient(135deg, #ff7a45 0%, #d46b08 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(212, 107, 8, 0.4);
+        }
+
+        .message-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .message-box {
+            background: white;
+            padding: 3rem;
+            border-radius: 30px;
+            text-align: center;
+            max-width: 400px;
+        }
+
+        .warning-text {
+            color: #cf1322;
+            font-size: 1rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+            height: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="fireworkCanvas"></canvas>
+
+    <div class="game-container">
+        <h1>Square Chaos Flood</h1>
+        <div class="stats">
+            剩餘步數：<span id="moves-count">35</span>
+        </div>
+        <div class="warning-text" id="status-msg">觀察這一秒！</div>
+        <div class="timer-container">
+            <div id="timer-bar"></div>
+        </div>
+        
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+
+        <div class="controls" id="color-palette"></div>
+
+        <div class="action-buttons">
+            <button class="reset-btn" onclick="initGame()">重新開始遊戲</button>
+        </div>
+    </div>
+
+    <div id="overlay" class="message-overlay">
+        <div class="message-box">
+            <h2 id="result-title">恭喜過關！</h2>
+            <p id="result-text"></p>
+            <button class="reset-btn" onclick="initGame()">再玩一次</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const fwCanvas = document.getElementById('fireworkCanvas');
+        const fwCtx = fwCanvas.getContext('2d');
+        
+        const movesDisplay = document.getElementById('moves-count');
+        const palette = document.getElementById('color-palette');
+        const overlay = document.getElementById('overlay');
+        const timerBar = document.getElementById('timer-bar');
+        const statusMsg = document.getElementById('status-msg');
+
+        const SIZE = 20; 
+        const MAX_MOVES = 35;
+        const DISPLAY_TIME = 1000; 
+        const COLORS = [
+            '#FF69B4', // 鮮粉紅
+            '#9D50BB', // 亮紫色
+            '#00BFFF', // 亮藍
+            '#FF8C00', // 亮橘
+            '#7FFF00', // 螢光綠
+            '#FFD700'  // 純金色
+        ];
+
+        let grid = [];
+        let currentMoves = 0;
+        let isBlackout = false;
+        let blackoutTimer = null;
+        let barInterval = null;
+        
+        let clickHistory = new Array(COLORS.length).fill(0);
+        let particles = [];
+        let isCelebrating = false;
+
+        const cellSize = canvas.width / SIZE;
+
+        function resizeFireworkCanvas() {
+            fwCanvas.width = window.innerWidth;
+            fwCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeFireworkCanvas);
+        resizeFireworkCanvas();
+
+        function initGame() {
+            grid = [];
+            currentMoves = MAX_MOVES;
+            clickHistory.fill(0);
+            overlay.style.display = 'none';
+            isBlackout = false;
+            isCelebrating = false;
+            particles = [];
+            fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+            
+            for (let r = 0; r < SIZE; r++) {
+                grid[r] = [];
+                for (let c = 0; c < SIZE; c++) {
+                    grid[r][c] = Math.floor(Math.random() * COLORS.length);
+                }
+            }
+            
+            ensureHighGainOpportunity();
+            updateUI();
+            startBlackoutTimer();
+            draw();
+        }
+
+        function ensureHighGainOpportunity() {
+            const captured = getCapturedSet(grid);
+            const capturedCoords = Array.from(captured).map(key => key.split(',').map(Number));
+            
+            let maxGain = 0;
+            for (let i = 0; i < COLORS.length; i++) {
+                const gain = calculatePotentialGain(i);
+                if (gain > maxGain) maxGain = gain;
+            }
+
+            const threshold = (SIZE * SIZE) * 0.08; // 增加收益期望值到 8%
+            if (maxGain < threshold) {
+                const targetColorIndex = Math.floor(Math.random() * COLORS.length);
+                for (let i = 0; i < threshold + 10; i++) {
+                    const randomEdge = capturedCoords[Math.floor(Math.random() * capturedCoords.length)];
+                    const neighbors = getNeighbors(randomEdge[0], randomEdge[1]);
+                    const targets = neighbors.filter(n => !captured.has(`${n[0]},${n[1]}`));
+                    if (targets.length > 0) {
+                        const t = targets[Math.floor(Math.random() * targets.length)];
+                        grid[t[0]][t[1]] = targetColorIndex;
+                    }
+                }
+            }
+        }
+
+        function calculatePotentialGain(colorIndex) {
+            const startColor = grid[0][0];
+            if (colorIndex === startColor) return 0;
+            const capturedCount = getCapturedSet(grid).size;
+            const tempGrid = grid.map(row => [...row]);
+            const stack = [[0, 0]];
+            const seen = new Set();
+            while(stack.length > 0) {
+                const [r, c] = stack.pop();
+                if (tempGrid[r][c] !== startColor || seen.has(`${r},${c}`)) continue;
+                tempGrid[r][c] = colorIndex;
+                seen.add(`${r},${c}`);
+                const neighbors = getNeighbors(r, c);
+                for (let [nr, nc] of neighbors) stack.push([nr, nc]);
+            }
+            return getCapturedSet(tempGrid).size - capturedCount;
+        }
+
+        function startBlackoutTimer() {
+            isBlackout = false;
+            clearTimeout(blackoutTimer);
+            clearInterval(barInterval);
+            let startTime = Date.now();
+            statusMsg.innerText = "找到那個高收益區塊！";
+            statusMsg.style.color = "#d46b08";
+
+            barInterval = setInterval(() => {
+                let elapsed = Date.now() - startTime;
+                let progress = Math.max(0, 100 - (elapsed / DISPLAY_TIME * 100));
+                timerBar.style.width = progress + "%";
+                if (elapsed >= DISPLAY_TIME) clearInterval(barInterval);
+            }, 30);
+
+            blackoutTimer = setTimeout(() => {
+                isBlackout = true;
+                statusMsg.innerText = "黑暗降臨，憑記憶點擊！";
+                statusMsg.style.color = "#cf1322";
+                draw();
+            }, DISPLAY_TIME);
+        }
+
+        function drawSquare(r, c, color) {
+            ctx.fillStyle = isBlackout ? "#111" : color;
+            ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+            ctx.strokeStyle = isBlackout ? "#222" : "rgba(255, 255, 255, 0.2)";
+            ctx.strokeRect(c * cellSize, r * cellSize, cellSize, cellSize);
+        }
+
+        function getNeighbors(r, c) {
+            const neighbors = [];
+            const directions = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+            for (let [dr, dc] of directions) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) neighbors.push([nr, nc]);
+            }
+            return neighbors;
+        }
+
+        function getCapturedSet(targetGrid) {
+            const startColor = targetGrid[0][0];
+            const captured = new Set();
+            const stack = [[0, 0]];
+            while(stack.length > 0) {
+                const [r, c] = stack.pop();
+                const k = `${r},${c}`;
+                if (captured.has(k)) continue;
+                captured.add(k);
+                for (let [nr, nc] of getNeighbors(r, c)) {
+                    if (targetGrid[nr][nc] === startColor) stack.push([nr, nc]);
+                }
+            }
+            return captured;
+        }
+
+        function floodFill(newColorIndex) {
+            if (currentMoves <= 0 || isCelebrating) return;
+            const startColor = grid[0][0];
+            if (startColor === newColorIndex) return;
+
+            clickHistory[newColorIndex]++;
+            const stack = [[0, 0]];
+            const seen = new Set();
+            while(stack.length > 0) {
+                const [r, c] = stack.pop();
+                if (grid[r][c] !== startColor || seen.has(`${r},${c}`)) continue;
+                grid[r][c] = newColorIndex;
+                seen.add(`${r},${c}`);
+                for (let [nr, nc] of getNeighbors(r, c)) stack.push([nr, nc]);
+            }
+
+            const captured = getCapturedSet(grid);
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (!captured.has(`${r},${c}`)) grid[r][c] = Math.floor(Math.random() * COLORS.length);
+                }
+            }
+            ensureHighGainOpportunity();
+            currentMoves--;
+            updateUI();
+            startBlackoutTimer(); 
+            draw();
+            checkWin();
+        }
+
+        function updateUI() {
+            movesDisplay.innerText = currentMoves;
+            createPalette();
+        }
+
+        function createPalette() {
+            palette.innerHTML = '';
+            COLORS.forEach((color, index) => {
+                const btn = document.createElement('div');
+                btn.className = 'color-btn';
+                btn.style.backgroundColor = color;
+                btn.onclick = () => floodFill(index);
+                palette.appendChild(btn);
+            });
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    drawSquare(r, c, COLORS[grid[r][c]]);
+                }
+            }
+        }
+
+        function checkWin() {
+            const targetColor = grid[0][0];
+            const hasWon = grid.every(row => row.every(cell => cell === targetColor));
+            if (hasWon) {
+                clearTimeout(blackoutTimer);
+                clearInterval(barInterval);
+                isBlackout = false;
+                isCelebrating = true;
+                draw();
+                showResult("震撼級記憶！", `煙火數量取決於你的剩餘步數：${currentMoves}！`);
+                startCelebration();
+            } else if (currentMoves <= 0) {
+                clearTimeout(blackoutTimer);
+                clearInterval(barInterval);
+                isBlackout = false;
+                draw();
+                showResult("可惜！", "挑戰失敗，下次一定能成功。");
+            }
+        }
+
+        function showResult(title, text) {
+            document.getElementById('result-title').innerText = title;
+            document.getElementById('result-text').innerText = text;
+            overlay.style.display = 'flex';
+        }
+
+        // --- 超強效煙火系統 ---
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.radius = Math.random() * 4 + 1;
+                const angle = Math.random() * Math.PI * 2;
+                const velocity = Math.random() * 12 + 4;
+                this.vx = Math.cos(angle) * velocity;
+                this.vy = Math.sin(angle) * velocity;
+                this.life = 100;
+                this.decay = Math.random() * 1.5 + 1.2;
+            }
+
+            draw() {
+                fwCtx.beginPath();
+                fwCtx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                fwCtx.fillStyle = this.color;
+                // 添加外發光感
+                fwCtx.shadowBlur = 15;
+                fwCtx.shadowColor = this.color;
+                fwCtx.fill();
+                
+                // 畫一個白色核心
+                fwCtx.beginPath();
+                fwCtx.arc(this.x, this.y, this.radius / 2, 0, Math.PI * 2);
+                fwCtx.fillStyle = "#fff";
+                fwCtx.fill();
+                fwCtx.shadowBlur = 0;
+            }
+
+            update() {
+                this.vy += 0.15; // 重力
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vx *= 0.98; // 空氣阻力
+                this.vy *= 0.98;
+                this.life -= this.decay;
+            }
+        }
+
+        function startCelebration() {
+            let colorPool = [];
+            clickHistory.forEach((count, idx) => {
+                for(let i=0; i<count; i++) colorPool.push(COLORS[idx]);
+            });
+            if(colorPool.length === 0) colorPool = COLORS;
+
+            function launchFirework() {
+                if(!isCelebrating) return;
+                const x = Math.random() * fwCanvas.width;
+                const y = Math.random() * (fwCanvas.height * 0.5) + 100;
+                const color = colorPool[Math.floor(Math.random() * colorPool.length)];
+                
+                // 一次噴發大量粒子
+                for (let i = 0; i < 100; i++) {
+                    particles.push(new Particle(x, y, color));
+                }
+
+                // 剩餘步數越高，煙火越猛
+                const interval = Math.max(80, 800 - (currentMoves * 30));
+                setTimeout(launchFirework, interval);
+            }
+
+            launchFirework();
+            animateFireworks();
+        }
+
+        function animateFireworks() {
+            if (!isCelebrating && particles.length === 0) {
+                fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+                return;
+            }
+
+            // 使用半透明清理營造拖尾感
+            fwCtx.globalCompositeOperation = 'destination-out';
+            fwCtx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            fwCtx.fillRect(0, 0, fwCanvas.width, fwCanvas.height);
+            fwCtx.globalCompositeOperation = 'lighter'; // 讓重疊處變亮
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.update();
+                p.draw();
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            requestAnimationFrame(animateFireworks);
+        }
+
+        initGame();
+    </script>
+</body>
+</html>
